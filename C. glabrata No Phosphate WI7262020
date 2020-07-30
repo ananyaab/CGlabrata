@@ -1,0 +1,103 @@
+---
+title: "C. glabrata No Phosphate Wave Investigation"
+author: "Amanda C., Ananya A., Jinye, and Bin He"
+date: "7/26/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Intro: According to "Dual role of starvation signaling in promoting growth and recovery" S. cerevisae displays a two wave gene regulation in response to phosphate starvation. We are interested to see if this two wave regulation is conserved between S. cerevisiae and C. glabrata. The waved regulation is harder to see in 0mM because the cell has a very short 1st wave as in 0mM conditions internal phosphate storages are quickly depleted and the lack of phosphate becomes growth limiting. The heatmaps produced from this will be compared to S. cerevisiae 0mM heatmaps.
+
+### Original Data: mRNAseq data from C. glabrata in 0mM phosphate conditions. This data includes strains that are wild type and pho 4 deletions. The data needs to be subset between these two conditions, we can not compare them directly.
+````{r}
+install.packages("dplyr")
+library(dplyr)
+### Subsetting data
+WTMRNA<- WImRNA.Data.C..glabrata.7242020 %>% select(gene, S3,S4,S7,S8,S11,S12,S15,S16,S19,S20,S23,S25,S26,S29,S31,S32,S35)
+### WTMRNA is a data set that contains the mRNA seq of all the WT type strains.
+
+### Subsetting Data pt. 2
+DPHO4MRNA <- WImRNA.Data.C..glabrata.7242020 %>% select(gene,S5,S6,S9,S10,S13,S13prime, S14,S17,S18,S21,S22,S24,S27,S28,S30,S30,S33,S34,S36)
+### DPHO4MRNA is a data set that contains the mRNA seq of all the pho4 deletion strains.
+
+```
+###To see if C. glabrata displays the same 2 wave regulation that S. cerevisiae does, we need to make heatmaps. First we will use the wild type data. I will subset everything but the first column to make it a proper matrix. The first column is gene names, and in the base R heatmap, a column of characters will create an error. 
+````{r}
+WTMRNAmat<-as.matrix(WTMRNA[-1])
+heatmap(WTMRNAmat, Colv = NA,Rowv = NA)
+```
+### This heatmap was a great test to make sure that the data was formatted correctly and that our methods of making heatmaps were correct. However, due to the number of entries, this makes it very hard to see any patterns. 
+````{r}
+DPHO4MRNAmat<-as.matrix(DPHO4MRNA[-1])
+heatmap(DPHO4MRNAmat, Colv = NA,Rowv = NA)
+```
+### This heatmap was a great test to make sure that the data was formatted correctly and that our methods of making heatmaps were correct. However, due to the number of entries, this makes it very hard to see any patterns. This heatmap in particular applies to strains that lacked pho4. Without pho4, many of the genes necessary for phosphate survival will not be induced.
+
+###To be able to accurately compare the regulation patterns, we need to isolate the Phosphate Regulatory Genes. The Phosphate genes were found from a paper written by He et al. called  "Evolution of reduced co-activator dependence led to target expansion of a starvation response pathway" in the supplementary data table 2. These genes were separated from the rest of the data and further divided between WT strains and pho4 deletion strains. 
+
+### This is the code to generate a heatmap of the WT phosphate regulatory system genes.  
+````{r}
+### Renaming the data
+
+CglabPHO4WT<-C_glabrataGRP_Phosphate_Genes_7302020
+rm(C_glabrataGRP_Phosphate_Genes_7302020)
+###CglabPHO4WT=C_glabrataGRP_Phoshpate_Genes_7302020
+
+####creating a matrix of the data
+CglabPHO4WTmat<-as.matrix(CglabPHO4WT[,-1])
+
+rownames(CglabPHO4WTmat)=(CglabPHO4WT[,1])
+
+heatmap(CglabPHO4WTmat,Rowv = NA, Colv = NA)
+
+```
+### This heatmap shows that when the cells are not being starved (pre columns) the majority of these genes are not being induced. The first timepoint, 20 minutes after being transferred to 0mM phosphate media, all of the phosphate genes are upregulated. The two wave regulation system may help the cells recover from being starved and to prepare for a worse stress, however the 1st wave would only be beneficial in the instance where the cell is in mild stress, not a severe one. The first gene,CAGL0M12430g, also known as RH2 is a Glycerol-3-Phosphate Phosphatase.
+
+### Our data has two columns for each timepoint. Taking the mean of each timepoint will make the heatmap more conscise. 
+````{r}
+library(reshape2)
+long <- melt(CglabPHO4WT, id.vars = c("gene", "pre...2","pre...3","20m...4","20m...5","30m...6","30m...7","45m...8","45m...9","60m...10","60m...11","60m...12","90m","120m...14","120m...15","150m","180m...17","180m...18","240m"))
+###This might have been unnecessary based on how I calculated the avgerages
+
+###calculating the averages
+long$avpre<-((long$pre...2+long$pre...3)/2)
+long$av20<-((long$`20m...4`+long$`20m...5`)/2)
+long$av30<-((long$`30m...6`+long$`30m...7`)/2)
+long$av45<-((long$`45m...8`+long$`45m...9`)/2)
+long$av60<-((long$`60m...10`+long$`60m...11`+long$`60m...12`)/3)
+long$av120<-((long$`120m...14`+long$`120m...15`)/2)
+long$av180<-((long$`180m...17`+long$`180m...18`)/2)
+
+###subset the data to get the columns we want
+data<-subset(long, select=c(preav,av20,av30,av45,av60,`90m`,av120,`150m`,av180,`240m`))
+
+####This new set does not have the gene names so we need to add them back and convert the new data set called "data" to a matrix. 
+
+###CglabPHO4mat is the unaveraged version of datamatrix.
+
+datamatrix<-as.matrix(data)##convert to matrix
+
+rownames(data)=(CglabPHO4WT[,1])##add correct row names back
+
+library(RColorBrewer)
+colside<-colorRampPalette(brewer.pal(9, "YlOrRd"))(15)
+###setting up heatmap to have a side gradient to match
+
+heatmap(datamatrix,Rowv = NA, Colv = NA,xlab="Time(min)",RowSideColors = colside)
+```
+### This new heatmap tells the same story as the one above.
+
+### Trying another heatmap function to see if I like it more.
+````{r}
+install.packages("pheatmap")
+
+suppressPackageStartupMessages(library(pheatmap))
+
+library("RColorBrewer")
+
+pheatmap(datamatrix,cluster_rows = F,cluster_cols = F)
+
+```
+### This new heatmap tells the same story as the one above.
