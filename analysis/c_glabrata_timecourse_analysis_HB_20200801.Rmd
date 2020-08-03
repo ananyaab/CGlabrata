@@ -1,0 +1,208 @@
+---
+title: Analyze C. glabrata time course expression
+author: Bin He
+date: 2020-08-01
+output:
+  html_notebook:
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup}
+library(tidyverse)
+```
+
+## Load data
+```{r}
+tab <- read_csv("../data/Ex009_experiment_set_up_20171019.csv")
+dat <- read_tsv("../data/Ex009_normalized_log2_read_counts.zip")
+```
+## Prepare data
+
+In this analysis we will focus on the "wt" samples, `r tab %>% filter(Genotype == "wt", Timepoint != "del80")`
+
+```{r}
+# choose the samples to use and convert the time points to numeric variable
+time2num <- c("pre" = 0, "20m" = 20, "30m" = 30, "45m" = 45, "60m" = 60,
+               "90m" = 90, "120m" = 120, "150m" = 150, "180m" = 180, 
+               "240m" = 240)
+samples.use <- tab %>% 
+  filter(Genotype == "wt", Timepoint != "del80") %>% 
+  mutate(Time = time2num[Timepoint]) %>% 
+  select(Sample, Time)
+
+# extract the list of sample names
+wt.list <- samples.use$Sample
+
+# extract the data matrix
+dat1 <- dat %>% select(all_of(wt.list))
+m.dat1 <- as.matrix(dat1); rownames(m.dat1) <- dat$gene; colnames(m.dat1) <- samples.use$Time
+```
+
+## Calculate distance (dissimilarity) between genes
+
+Our goal is to group genes based on their temporal profile, that is, genes that share the same temporal pattern, such as increase in expression over time, should be grouped together.
+
+For example:
+```{r}
+# convert the data matrix to a long format suitable for ggplot
+dat.tbl <- dat1 %>% 
+  pivot_longer(cols = starts_with("S"), names_to = "sample") %>% 
+  left_join(samples.use, by = c("sample" = "Sample")) %>% 
+  select(gene, time = Time, value)
+
+# plot examples
+exp.list <- paste0("CAGL0",c("B02475g", "F02145g", "H07359g", "J04202g"))
+exp.label <- paste(exp.list, c("PHO84","PHM2","PHO8","HSP12"), sep = " ")
+names(exp.label) <- exp.list
+dat.tbl %>% 
+  filter(gene %in% exp.list) %>% 
+  ggplot(aes(x = time, y = value)) + geom_line() + 
+  facet_wrap(~gene, scales = "free_y", labeller = labeller(gene = exp.label)) + xlab("time (min)") + ylab("log2 normalized mRNA counts")
+```
+
+### A toy example
+In order to cluster genes based on this criteria, we need to first quantify the dissimilarity between genes. Here we are less interested in the "magnitude" of gene expression than the "profile" or temporal dynamics of gene expression. In the above example, notice that the absolute maximum expression levels of the four genes differ a lot. However, they all show the same "pattern", i.e. an early rise followed by sustained expression. Let's look at a simple example consisting of four genes and four time points:
+
+```{r}
+toy <- matrix(c(2,4,4,4,6,6,3,2,20,40,40,40,45,45,35,20), 
+              byrow = T, nrow = 4, 
+              dimnames = list(gene = paste("gene", 1:4), 
+                              time = c(10,20,30,40)))
+toy
+plot(x = 1, type = "n", xlim = c(10,50), ylim = c(0, 50))
+t = c(10,20,30,40)
+for(i in 1:4){
+  points(t, toy[i,], pch = i)
+  lines(t, toy[i,])
+}
+legend("topright", legend = rownames(toy), pch = 1:4)
+```
+### Scaling to the rescue
+Although the scales make it a bit difficult to see, but one can tell that genes 1 and 3 "rise" over time while genes 2 and 4 "fall" over time. The question is, how can we turn that intuition into a number that can be calculated from the data? One idea is to "scale" the data by subtracting the mean expression level across time of each gene from each time point, and divide the result by the standard deviation of the four time points. This will "center" and standardize the genes.
+```{r}
+toy.scaled <- scale(t(toy)) # note that most r functions operate on columns
+# since we want to operate on the time series, we transpose the matrix so
+# that each gene is in a column
+matplot(t, toy.scaled, type = "b", pch = 1:4, lty = 1, col = 1)
+legend("topright", colnames(toy.scaled), pch = 1:4)
+```
+### `dist()` function
+Now the (dis)similarity patterns are more clear. But we still don't have a number. We can now calculate the "Euclidian distance" between each pair of genes. In a 2D or 3D space, this measure would be the familiar "distance". In higher dimensions such as here (each gene is a data point in a 4-D space spanned by their expression levels at each of the four time points), the idea would be the same, where $D := \sqrt{\sum_{i=1}^{4}(x_i-y_i)^2}$. Using the `dist()` function, we found the result to be 
+```{r}
+dist(t(toy.scaled)) # dist() computes the distance between rows
+```
+Compare this to the result had we applied the function on the unscaled raw data
+```{r}
+dist(toy)
+```
+
+### Pearson's Correlation Coefficient as another way to measure similarity
+There is another way to quantify the dissimilarity between the expression patterns of the genes: calculate the Pearson's correlation coefficient between the time series and subtract it from 1. The Pearson's correlation coefficient describes the colinearity between two variables. Often written as "r", it is closely related to linear regression. In fact, you may well have seen "r" or "$R^2$" written on plots with linear regression lines. Intuitively, two time series are perfectly positively correlated if they rise or fall together, and perfectly anti-correlated if they have the opposite pattern. In the example above, gene 1 and 3 would have a Pearson's correlation coefficient of +1. Now let's compute the results for all pairs:
+
+> _Note_
+>
+>    `cor()` computes the pairwise correlation between *COLUMNS* of a matrix and therefore we need to transpose the original matrix
+
+```{r}
+cor(t(toy))
+```
+Compare this to the result using the untransposed matrix, which shows the correlations between time points (this may be of interest as well).  
+```{r}
+cor(toy)
+```
+
+Note that we don't have to scale the original data because the calculation of correlation includes the scaling (see [wiki](https://en.wikipedia.org/wiki/Correlation_and_dependence))
+
+## Clustering genes
+Armed with two different ways to measure the distance or similarity between genes, we can now move on to cluster the genes and visualize them with the `aheatmap()` function from the `NMF` package.
+
+### Use Euclidean distance
+```{r}
+# we first use the Euclidean distance on the scaled matrix
+# note that dist() operates on the rows
+t(toy.scaled)
+toy.dist1 <- dist(t(toy.scaled), method = "euclidean")
+toy.dist1
+toy.clust1 <- hclust(toy.dist1)
+plot(toy.clust1)
+```
+
+### Use correlation matrix
+```{r}
+# remember that cor() operates on the columns
+t(toy)
+toy.dist2 <- 1-cor(t(toy))
+toy.dist2
+toy.clust2 <- hclust(as.dist(toy.dist2))
+plot(toy.clust2)
+```
+Notice that the topologies are the same but the tree height units are different between the two. But that doesn't concern us.
+
+Before we apply what we learned to our actual gene expression dataset, let's look at one more thing, that is, how `heatmap()` function works.
+
+## Dissecting the `heatmap()` function
+
+### Brief explanation
+`heatmap()` actually involves a series of steps. First the function applies, by default, the hierarchical clustering algorithm on both the rows and the columns based on the input data (non-scaled). It then reorders the rows and the columns to match the order after the clustering. Note, however, the clustering is done on the unscaled data. This is especially confusing because the base R's `heatmap()` function has an argument called `scaled`. This, however, only affects how the data are plotted, not how they are clustered. Note that this clustering step can be skipped by setting `Rowv = NA` and `Colv = NA`, each of which controls whether clustering and reordering is done for the rows and the columns respectively.
+
+Once the rows and columns are reordered, unless disabled by the arguments shown above, the function then checks the value of `scale`. The default for this argument depends on the value of another argument, `symm`, whose default is `false`. If "symm" is false, `scale` defaults to "row", i.e. scaling by row. Otherwise, scaling is off.
+
+After reordering and scaling, if applicable, `heatmap()` then _transposes_ the resulting matrix and plots it using the base function `image()`. We will see the reason for transposin the matrix later. Let's first understand how `image()` works. This function simply draws rectangles and colors them by the value given. Note there is something nonintuitive about the mapping from the matrix to the image -- the `image()` function draws a cartesian coordinate with (0,0) at the lower left corner. It then colors the square corresponding to (i,j) to the value of X[i,j] in the matrix. If you follows me so far, you realize that the while in the matrix the first index is the row and the second the column, in the image, the rows now become the x-axis and the columns the y-axis. Essentially, the matrix has been rotated 90 degrees counterclockwise.
+
+### Using the `image()` function
+Now let's look at the toy example to understand these intuitively.
+First, if we directly apply image() to the toy data, this is what we get
+```{r}
+image(x = 1:4, y = c(10,20,30,40), z = toy, xlab = "gene", ylab = "time (min)", xaxt = "n", yaxt = "n")
+axis(side = 1, at = 1:4, labels = rownames(toy))
+axis(side = 2, at = c(10,20,30,40), labels = colnames(toy))
+```
+Next we use the `heatmap()` function without clustering or scaling
+```{r}
+heatmap(toy, Rowv = NA, Colv = NA, scale = "none")
+```
+Once we imagine that the row labels be moved to the left side, we realize that the `heatmap()` function effectively swapped the rows and the columns, i.e. _transposed_ the matrix. Presumably, this makes the rows and columns appear _nearly_ the same as the input matrix. I say "nearly" because -- notice that -- the row orders were reversed, again because in a plot, (0,0) is in the lower left corner.
+
+### Adding the clustering based reordering
+Now let's add the clustering -- note that we only want to cluster the genes, and would like to keep the time points in their original order, for obvious reasons. To achieve this, we realize that time series are in the columns. So we just need to set `Colv = NA`, while leaving `Rowv = NULL`, which means it uses the default clustering order.
+```{r}
+# with row clustering
+heatmap(toy, Rowv = NULL, Colv = NA, scale = "none")
+```
+### Adding scaling doesn't change the reordering
+We found that the clustering is not what we have expected, i.e. gene 1/3 and gene 2/4. This is because by default `heatmap()` clusters the rows based on the unscaled values. So what if we set `scale = "row"`? Let's see:
+```{r}
+#heatmap with row scaling and clustering
+heatmap(toy, Rowv = NULL, Colv = NA, scale = "row")
+```
+### Implement the reordering step outside the `heatmap()` function
+So now the plotted colors match the scaled values, but the clustering order is still the original! This shows that the scaling step is only for plotting, not for reordering. We can actually implement the ordering step outside of the `heatmap()` function
+```{r}
+# below is how reordering is done inside the heatmap function
+# recall that we have set toy.dist1 = dist(toy)
+toy.dist1
+# we can then cluster the genes using this distance matrix, which we stored as toy.clust1
+plot(toy.clust1)
+# we can then use this order in the heatmap
+heatmap(toy, Rowv = as.dendrogram(toy.clust1), Colv = NA, scale = "row")
+```
+Now this is what we would have expected. This tells us that if we should think of heatmap and clustering as two steps, even though the `heatmap()` function in base R and many of its variations combine the two. This helps use clearly define
+
+1. which variable do we want to cluster, the genes or the time series (or any other dimension)?
+1. how do we want to measure the dissimilarity (distance) -- by Euclidean disance or Pearson's Correlation Coefficient?
+1. how do we want to visualize the data, e.g. whether to reorder the rows or columns, whether to plot scaled or unscaled data etc. Note that scaling would remove the difference between genes in their absolute expression level, leaving only the temporal dynamics visible. Sometimes that may be exactly what we want, while in other cases that may not be desirable.
+
+## Apply to our data
+### plot the raw data, scaled or not
+```{r}
+# we will use the aheatmap function from the NMF package, which is 
+# similar but with better defaults than the base R's heatmap()
+suppressPackageStartupMessages(library(NMF))
+tmp <- aheatmap(m.dat1, Rowv = NA, Colv = NA, scale = "none")
+```
+We can see that the unscaled heatmap is not terribly useful to look at, as what we see mostly are the differences in the average expression levels of genes. What if we scale the matrix by row and only visualize the temporal dynamics?
+```{r}
+tmp = aheatmap(m.dat1, Rowv = NA, Colv = NA, scale = "row")
+```
+Now we start to see some interesting patterns. It seems that there are global changes before and after the starvation, although we don't know how big are the changes because the data has been scaled.

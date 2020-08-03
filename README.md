@@ -22,3 +22,7 @@ sampleinfo <- read_csv("data/Ex009_experiment_set_up_20171019.csv")
 matrix.data <- as.matrix(normalized[,-1])
 rownames(matrix.data) <- normalized$gene
 ```
+
+# Resource
+- <http://www.opiniomics.org/you-probably-dont-understand-heatmaps/>
+- Bin's take on gene expression clustering (a rendering of the `analysis/c_glabrata_timecourse_analysis_HB_20200801.nb.html`): <https://rpubs.com/emptyhb/645504>
