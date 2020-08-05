@@ -34,31 +34,76 @@ samples.use <- tab %>%
 # extract the list of sample names
 wt.list <- samples.use$Sample
 
-# extract the data matrix
-dat1 <- dat %>% select(all_of(wt.list))
-m.dat1 <- as.matrix(dat1); rownames(m.dat1) <- dat$gene; colnames(m.dat1) <- samples.use$Time
+# subset the data
+dat1 <- dat %>% select(gene, all_of(wt.list))
+
+# there are technical duplicates for each time point. for our purpose
+# we just need one value per time point. It is sensible to compute the 
+# mean value for each gene at each time point. to do this we first convert
+# the data table into a long format, which allows for aggregation functions
+dat1.long <- dat1 %>% 
+  pivot_longer(starts_with("S"), names_to = "sample") %>% 
+  left_join(samples.use, by = c("sample" = "Sample")) %>% 
+  select(gene, time = Time, exn = value)
+
+# calculate mean value for each timepoint within each gene
+dat1.aggr <- dat1.long %>% 
+  group_by(gene, time) %>% 
+  summarize(avg.exn = mean(exn), sd.exn = sd(exn), .groups = "drop_last") %>%  
+  # subtract the value of the first timepoint from the 
+  # rest to form relative expression level (baseline)
+  mutate(rel.exn = avg.exn - first(avg.exn))
+
+# convert the long format back to the wide format for extracting matrix
+dat1.wide <- dat1.aggr %>% 
+  pivot_wider(id_cols = gene, names_from = time, values_from = avg.exn)
+
+dat2.wide <- dat1.aggr %>% 
+  pivot_wider(id_cols = gene, names_from = time, values_from = rel.exn)
+
+# convert the result into a matrix for downstream analysis
+m.dat1 <- as.matrix(dat1.wide[,-1])
+rownames(m.dat1) <- dat1.wide$gene
+
+m.dat2 <- as.matrix(dat2.wide[,-1])
+rownames(m.dat2) <- dat2.wide$gene
 ```
 
 ## Calculate distance (dissimilarity) between genes
 
 Our goal is to group genes based on their temporal profile, that is, genes that share the same temporal pattern, such as increase in expression over time, should be grouped together.
 
-For example:
+For example, here are some genes known to be induced after starvation:
 ```{r}
-# convert the data matrix to a long format suitable for ggplot
-dat.tbl <- dat1 %>% 
-  pivot_longer(cols = starts_with("S"), names_to = "sample") %>% 
-  left_join(samples.use, by = c("sample" = "Sample")) %>% 
-  select(gene, time = Time, value)
-
 # plot examples
-exp.list <- paste0("CAGL0",c("B02475g", "F02145g", "H07359g", "J04202g"))
-exp.label <- paste(exp.list, c("PHO84","PHM2","PHO8","HSP12"), sep = " ")
+exp.list <- paste0("CAGL0",c("B02475g", "F02145g", "K10868g", "J04202g"))
+exp.label <- paste(exp.list, c("PHO84","PHM2","CTA1","HSP12"), sep = " ")
 names(exp.label) <- exp.list
-dat.tbl %>% 
+dat1.aggr %>% 
   filter(gene %in% exp.list) %>% 
-  ggplot(aes(x = time, y = value)) + geom_line() + 
-  facet_wrap(~gene, scales = "free_y", labeller = labeller(gene = exp.label)) + xlab("time (min)") + ylab("log2 normalized mRNA counts")
+  ggplot(aes(x = time, y = rel.exn)) + geom_line() + geom_point(shape = 0) +
+  geom_errorbar(aes(ymin = rel.exn - 1.96*sd.exn, 
+                    ymax = rel.exn + 1.96*sd.exn)) +
+  facet_wrap(~gene, labeller = labeller(gene = exp.label)) + 
+  xlab("time (min)") + ylab("log2 normalized mRNA counts - time_0") +
+  labs(caption = "points are average of at least two biological replicates\nerror bars are 95% confidence intervals") +
+  theme(plot.caption = element_text(hjust = 0))
+```
+And here are genes that are not expected to respond to phosphate starvation:
+```{r}
+# plot examples
+exp.list <- paste0("CAGL0",c("K12694g", "K05005g", "D06138g", "D05170g"))
+exp.label <- paste(exp.list, c("ACT1","ALG9","HEM2","PHO4"), sep = " ")
+names(exp.label) <- exp.list
+dat1.aggr %>% 
+  filter(gene %in% exp.list) %>% 
+  ggplot(aes(x = time, y = rel.exn)) + geom_line() + geom_point(shape = 0) +
+  geom_errorbar(aes(ymin = rel.exn - 1.96*sd.exn, 
+                    ymax = rel.exn + 1.96*sd.exn)) +
+  facet_wrap(~gene, labeller = labeller(gene = exp.label)) + ylim(-5,5) +
+  xlab("time (min)") + ylab("log2 normalized mRNA counts - time_0") +
+  labs(caption = "points are average of at least two biological replicates\nerror bars are 95% confidence intervals") +
+  theme(plot.caption = element_text(hjust = 0))
 ```
 
 ### A toy example
@@ -195,14 +240,55 @@ Now this is what we would have expected. This tells us that if we should think o
 
 ## Apply to our data
 ### plot the raw data, scaled or not
+Since we are interested in genes that change their expression over the time course, it is natural to first look at the distribution of maximum change in expression for each gene over all time points, and then choose a cutoff and only select those genes with maximum change in expression greater than that cutoff.
 ```{r}
-# we will use the aheatmap function from the NMF package, which is 
+# check distribution of changes
+dat1.aggr %>% 
+  group_by(gene) %>% 
+  summarize(max.exn = max(abs(rel.exn))) %>% 
+  ggplot(aes(max.exn)) + stat_ecdf(geom = "step") +
+  scale_x_continuous(breaks = -1:15) +
+  xlab("log2 maximum fold change in expression relative to time_0") +
+  ylab("cumulative # of genes") +
+  ggtitle("Cumulative distribution of maximum fold change in expression")
+```
+Let's select the genes with a maximum fold change of 4 or above (log2 fold change of 2 or above)
+```{r}
+# subset the data
+morethan4fold <- apply(m.dat2, 1, function(x) any(abs(x) >= 2))
+m.dat3 <- m.dat2[morethan4fold,]
+```
+
+Now we can plot the log2 fold changes relative to time 0 for these genes:
+```{r}
+# we will use the pheatmap function from the pheatmap package, which is 
 # similar but with better defaults than the base R's heatmap()
-suppressPackageStartupMessages(library(NMF))
-tmp <- aheatmap(m.dat1, Rowv = NA, Colv = NA, scale = "none")
+suppressPackageStartupMessages(library(pheatmap))
+# nmf.options(grid.patch=TRUE)
+colour <- colorRampPalette( c("blue", "black", "yellow"), space="rgb")(64) # for plotting
+pheatmap(m.dat3, color = colour, breaks = seq(-8,8,length.out = 65), cluster_rows = F, cluster_cols = F, scale = "none", labels_row = "")
 ```
-We can see that the unscaled heatmap is not terribly useful to look at, as what we see mostly are the differences in the average expression levels of genes. What if we scale the matrix by row and only visualize the temporal dynamics?
+Now let's try to cluster the genes using Pearson's Correlation Coefficient. First, we will compute the correlation matrix and visualize it using the `image()` function, with reordering based on hierarchical clustering.
+```{r, fig.width=5, fig.height=5}
+dat3.cor <- cor(t(m.dat3), method = "pearson")
+dat3.hc <- hclust(as.dist(1-dat3.cor), method = "complete")
+od <- dat3.hc$order
+colour <- colorRampPalette( c("blue", "black", "yellow"), space="rgb")(64)
+image(dat3.cor[od, od], col = colour, xaxt = "n", yaxt = "n")
+```
+
+Next we apply the clustering order to the rows in the heatmap for gene expression.
 ```{r}
-tmp = aheatmap(m.dat1, Rowv = NA, Colv = NA, scale = "row")
+pheatmap(m.dat3, color = colour, breaks = seq(-8,8,length.out = 65), cluster_rows = dat3.hc, cluster_cols = F, scale = "none", labels_row = "")
 ```
-Now we start to see some interesting patterns. It seems that there are global changes before and after the starvation, although we don't know how big are the changes because the data has been scaled.
+
+Another question is how similar are the time points with each other. We use similar approaches above, but this time applied to the time points as columns.
+```{r, fig.width=6, fig.height=5}
+dat1.cor <- cor(m.dat1, method = "pearson")
+dat1.hc <- hclust(as.dist(1-dat1.cor), method = "complete")
+od1 <- dat1.hc$order
+colour <- colorRampPalette( c("blue", "black", "yellow"), space="rgb")(64)
+pheatmap(dat1.cor, col = colour, cluster_rows = F, cluster_cols = F, scale = "none")
+````
+
+The result is self-explanatory.
