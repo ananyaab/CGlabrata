@@ -270,11 +270,12 @@ pheatmap(m.dat3, color = colour, breaks = seq(-8,8,length.out = 65), cluster_row
 ```
 Now let's try to cluster the genes using Pearson's Correlation Coefficient. First, we will compute the correlation matrix and visualize it using the `image()` function, with reordering based on hierarchical clustering.
 ```{r, fig.width=5, fig.height=5}
+library(corrplot) # plot correlation matrix in heatmap format
 dat3.cor <- cor(t(m.dat3), method = "pearson")
 dat3.hc <- hclust(as.dist(1-dat3.cor), method = "complete")
 od <- dat3.hc$order
 colour <- colorRampPalette( c("blue", "black", "yellow"), space="rgb")(64)
-image(dat3.cor[od, od], col = colour, xaxt = "n", yaxt = "n")
+corrplot(dat3.cor, col = colour, method = "color", order = "hclust", hclust.method = "ward.D", addrect = 4, tl.pos = "n", title = "Pairwise Pearson's Correlation Coefficient for 1519 genes with >4 fold change")
 ```
 
 Next we apply the clustering order to the rows in the heatmap for gene expression.
