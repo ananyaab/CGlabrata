@@ -21,6 +21,8 @@ rownames(normalized_counts) <- orig_normalized_counts$gene
 ##heatmap
 heatmap(as.matrix(normalized_counts), Colv = NA, Rowv = NA)
 
+##this heatmap has data of ~5000 genes, and not all of them are related to pho4. 
+##In order to make sense of the data, the data should be subset to only show pho4-related genes
 
 ##only pho4 genes dataset
 CglabPHO4WT<-C_glabrataGRP_Phosphate_Genes_7302020
@@ -33,6 +35,6 @@ rownames(reduced_normalized_counts) <- CglabPHO4WT$gene
 ##heatmap
 heatmap(as.matrix(reduced_normalized_counts), Colv = NA, Rowv = NA)
 
-##this is a weird heatmap, and I can't really see any correlations...
+##this is a weird heatmap, and I can't really see any correlations... need to ask about this
 ```
 
