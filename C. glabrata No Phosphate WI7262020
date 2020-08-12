@@ -88,7 +88,6 @@ colside<-colorRampPalette(brewer.pal(9, "YlOrRd"))(15)
 heatmap(datamatrix,Rowv = NA, Colv = NA,xlab="Time(min)",RowSideColors = colside)
 ```
 ### This new heatmap tells the same story as the one above.
-
 ### Trying another heatmap function to see if I like it more.
 ````{r}
 install.packages("pheatmap")
@@ -98,6 +97,4 @@ suppressPackageStartupMessages(library(pheatmap))
 library("RColorBrewer")
 
 pheatmap(datamatrix,cluster_rows = F,cluster_cols = F)
-
 ```
-### This new heatmap tells the same story as the one above.
