@@ -1,0 +1,317 @@
+---
+title: "C. glabrata No Phosphate Wave Investigation"
+author: "Amanda C., Ananya A., Jinye, and Bin He"
+date: "7/26/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Intro: According to "Dual role of starvation signaling in promoting growth and recovery" S. cerevisae displays a two wave gene regulation in response to phosphate starvation. We are interested to see if this two wave regulation is conserved between S. cerevisiae and C. glabrata. The waved regulation is harder to see in 0mM because the cell has a very short 1st wave as in 0mM conditions internal phosphate storages are quickly depleted and the lack of phosphate becomes growth limiting. The heatmaps produced from this will be compared to S. cerevisiae 0mM heatmaps.
+
+### Original Data: mRNAseq data from C. glabrata in 0mM phosphate conditions. This data includes strains that are wild type and pho 4 deletions. The data needs to be subset between these two conditions, we can not compare them directly.
+````{r}
+install.packages("dplyr")
+library(dplyr)
+
+### Subsetting data between WT strains and PHO4p deletion strains
+WTMRNA<- WImRNA.Data.C..glabrata.7242020 %>% select(gene, S3,S4,S7,S8,S11,S12,S15,S16,S19,S20,S23,S25,S26,S29,S31,S32,S35)
+
+### WTMRNA is a data set that contains the mRNA seq of all the WT type strains.
+
+### Subsetting Data pt. 2
+DPHO4MRNA <- WImRNA.Data.C..glabrata.7242020 %>% select(gene,S5,S6,S9,S10,S13,S13prime, S14,S17,S18,S21,S22,S24,S27,S28,S30,S30,S33,S34,S36)
+### DPHO4MRNA is a data set that contains the mRNA seq of all the pho4 deletion strains.
+
+```
+###To see if C. glabrata displays the same 2 wave regulation that S. cerevisiae does, we need to make heatmaps. First we will use the wild type data. I will subset everything but the first column to make it a proper matrix. The first column is gene names, and in the base R heatmap, a column of characters will create an error. 
+````{r}
+WTMRNAmat<-as.matrix(WTMRNA[-1])
+heatmap(WTMRNAmat, Colv = NA,Rowv = NA)
+```
+### This heatmap was a great test to make sure that the data was formatted correctly and that our methods of making heatmaps were correct. However, due to the number of entries, this makes it very hard to see any patterns. 
+````{r}
+DPHO4MRNAmat<-as.matrix(DPHO4MRNA[-1])
+heatmap(DPHO4MRNAmat, Colv = NA,Rowv = NA)
+```
+### This heatmap was a great test to make sure that the data was formatted correctly and that our methods of making heatmaps were correct. However, due to the number of entries, this makes it very hard to see any patterns. This heatmap in particular applies to strains that lacked pho4. Without pho4, many of the genes necessary for phosphate survival will not be induced.
+
+###To be able to accurately compare the regulation patterns, we need to isolate the Phosphate Regulatory Genes from the WTMRNA data set. The Phosphate genes were found from a paper written by He et al. called  "Evolution of reduced co-activator dependence led to target expansion of a starvation response pathway" in the supplementary data table 2. These genes were separated from the rest of the data and further divided between WT strains and pho4 deletion strains. This was done outside of R studio.
+
+### This is the code to generate a heatmap of the WT phosphate regulatory system genes.  
+````{r}
+### Renaming the data
+
+CglabPHO4WT<-C_glabrataGRP_Phosphate_Genes_7302020
+rm(C_glabrataGRP_Phosphate_Genes_7302020)
+
+###CglabPHO4WT=C_glabrataGRP_Phoshpate_Genes_7302020
+
+####creating a matrix of the data
+
+CglabPHO4WTmat<-as.matrix(CglabPHO4WT[,-1])
+
+### Add back the gene names
+rownames(CglabPHO4WTmat)=(CglabPHO4WT[,1])
+
+###First, and very rough heatmap of the data
+heatmap(CglabPHO4WTmat,Rowv = NA, Colv = NA)
+
+```
+### The y-axis are gene names, specificaly from the phosphate regulation as described above. This heatmap shows that when the cells are not being starved (pre columns) the majority of these genes are not being induced. The first timepoint, 20 minutes after being transferred to 0mM phosphate media, all of the phosphate genes are upregulated. The two wave regulation system may help the cells recover from being starved and to prepare for a worse stress, however the 1st wave would only be beneficial in the instance where the cell is in mild stress, not a severe one. The first gene,CAGL0M12430g, also known as RH2 is a Glycerol-3-Phosphate Phosphatase.It is interesting that this gene has a very sifferent time pattern. 
+
+### Our data has two columns for each timepoint. Taking the mean of each timepoint will make the heatmap more conscise and also more intuitive when analyzing.
+````{r}
+library(reshape2)
+
+long <- melt(CglabPHO4WT, id.vars = c("gene", "pre...2","pre...3","20m...4","20m...5","30m...6","30m...7","45m...8","45m...9","60m...10","60m...11","60m...12","90m","120m...14","120m...15","150m","180m...17","180m...18","240m"))
+###This might have been unnecessary based on how I calculated the avgerages,there were several ways that I found to take averages of the columns, and this is the way I chose to do it. 
+
+###calculating the averages within the timepoints
+long$avpre<-((long$pre...2+long$pre...3)/2)
+long$av20<-((long$`20m...4`+long$`20m...5`)/2)
+long$av30<-((long$`30m...6`+long$`30m...7`)/2)
+long$av45<-((long$`45m...8`+long$`45m...9`)/2)
+long$av60<-((long$`60m...10`+long$`60m...11`+long$`60m...12`)/3)
+long$av120<-((long$`120m...14`+long$`120m...15`)/2)
+long$av180<-((long$`180m...17`+long$`180m...18`)/2)
+
+       ### Try it this way, see https://rpubs.com/emptyhb/645504 for more details
+#   There are technical duplicates for each time point. for our purpose
+#   we just need one value per time point. It is sensible to compute the 
+#   mean value for each gene at each time point. to do this we first convert
+#   the data table into a long format, which allows for aggregation functions
+  WTMRNA.long <- WTMRNA %>%
+  pivot_longer(starts_with("S"), names_to = "sample") %>% 
+  left_join(samples.use, by = c("sample" = "Sample")) %>% 
+  select(gene, time = Time, exn = value)
+
+      # calculate mean value for each timepoint within each gene
+  WTMRNA.aggr <- WTMRNA.long %>% 
+    group_by(gene, time) %>% 
+    summarize(avg.exn = mean(exn), sd.exn = sd(exn), .groups = "drop_last") %>%  
+    #  subtract the value of the first timepoint from the 
+    # rest to form relative expression level (baseline)
+    mutate(rel.exn = avg.exn - first(avg.exn))
+  # convert the long format back to the wide format for extracting matrix
+  dat1.wide <- dat1.aggr %>% 
+  pivot_wider(id_cols = gene, names_from = time, values_from = avg.exn)
+    # convert the result into a matrix for downstream analysis
+  m.dat1 <- as.matrix(dat1.wide[,-1])
+  rownames(m.dat1) <- dat1.wide$gene
+
+###subset the data to get the columns we want
+data<-subset(long, select=c(preav,av20,av30,av45,av60,`90m`,av120,`150m`,av180,`240m`))
+
+###rename the data set
+CgPHO4WTaveragetp<-data
+
+##data=CgPHO4WTaveragetp
+
+####This new set does not have the gene names so we need to add them back and convert the new data set called "data" or "CgPHO4WTaveragetp" to a matrix.
+as.matrix(data)
+as.matrix(CgPHO4WTaveragetp)
+###CglabPHO4mat is the unaveraged version of datamatrix or CgPHO4WTaveragetp.
+
+
+###this was experimental, and is not necessary to repoduce our heatmaps
+###Log2 transform
+datalog2<-log2(data)
+###Normalize
+datalog2$rel0<-(datalog2$preav-datalog2$preav)
+datalog2$rell20<-(datalog2$av20-datalog2$preav)
+datalog2$rel30<-(datalog2$av30-datalog2$preav)
+datalog2$rel45<-(datalog2$av45-datalog2$preav)
+datalog2$rel60<-(datalog2$av60-datalog2$preav)
+datalog2$rel90<-(datalog2$`90m`-datalog2$preav)
+datalog2$rel120<-(datalog2$av120-datalog2$preav)
+datalog2$rel150<-(datalog2$`150m`-datalog2$preav)
+datalog2$rel180<-(datalog2$av180-datalog2$preav)
+datalog2$rel240<-(datalog2$`240m`-datalog2$preav)
+
+###Subsetting for correct columns
+
+reldatalog2<-subset(datalog2,select=c(rel0,rell20,rel30,rel45,rel60,rel90,rel120,rel150,rel180,rel240))
+
+reldatalog2mat<-as.matrix(reldatalog2)
+
+reldatalog2matcor<-cor(reldatalog2mat,use="everything",method=c("pearson"))
+
+pheatmap(reldatalog2matcor, color = colour, cluster_rows = F,cluster_cols = F)
+####End of experimental data
+```
+###This pheatmap is a correlation matrix, but it has grey values for NA. This heatmap can be ignored for the purposes of this project.
+
+###Building a Heatmap using base R heatmap
+```{r}
+datamatrix<-as.matrix(data)##convert to matrix
+
+rownames(data)=(CglabPHO4WT[,1])##add correct row names back
+
+library(RColorBrewer)
+colside<-colorRampPalette(brewer.pal(9, "YlOrRd"))(15)###For coloring, when using heatmap()
+
+###setting up heatmap to have a side gradient to match
+
+heatmap(datamatrix,Rowv = NA, Colv = NA,xlab="Time(min)",RowSideColors = colside)
+
+####side gradient does not have value numbers, using function called pheatmap for a little more control see https://www.rdocumentation.org/packages/pheatmap/versions/1.0.12/topics/pheatmap and https://slowkow.com/notes/pheatmap-tutorial/ for help with pheatmap.
+```
+### This new heatmap tells the same story as the one above.
+
+### Trying another heatmap function to see if I like it more. It is called pHeatmap.
+````{r}
+install.packages("pheatmap")
+
+suppressPackageStartupMessages(library(pheatmap))
+
+library("RColorBrewer")###for coloring of heatmap
+
+pheatmap(datamatrix,cluster_rows = F,cluster_cols = F, color=maincol,xlab="Time", display_numbers = T,number_color = "grey")
+
+pheatmap(log2(datamatrix),cluster_rows = F,cluster_cols = F, color=maincol,xlab="Time", display_numbers = T,number_color = "grey")###ignore
+
+pheatmap(log(datamatrix),cluster_rows = F,cluster_cols = F, color=maincol,xlab="Time", display_numbers = T,number_color = "grey")###ignore
+
+```
+###Without the correlation matrix, we cannot yet assign exactly when the second wave begun. It is interesting how soon these phosphate genes upregulate their expression during 0mM conditions. 
+###Correlation Matrix using averaged data sets called "data", "datamatrix", and "newdata".
+```{r}
+colour <- colorRampPalette( c("blue", "black", "yellow"), space="rgb")(64)##for matrices
+
+cor(datamatrix,datamatrix,use="everything",method=c("pearson"))##how to find the correlation of a matrix
+
+heatmap(cor(datamatrix,datamatrix,use="everything",method=c("pearson")),Rowv=NA,Colv=NA)
+
+###this heatmap is not telling us the most clear story, lets see how we can change it around.
+
+data.cor<-cor(datamatrix,datamatrix,use="everything",method=c("pearson"))###giving the correlation values their own data set.
+
+data.cor2<-as.dist(1-data.cor)###1-pearson correlation, and the as. distance function
+
+data.cor2mat<-as.matrix(data.cor2)
+
+heatmap(data.cor2mat,Colv=NA,Rowv=NA)
+
+data.hc<-hclust(as.dist(1-data.cor),method="complete")
+
+od1<-data.hc$order
+
+pheatmap(data.cor,color = colour,cluster_rows = F,cluster_cols = F,scale="none",number_color = "grey",display_numbers = T)
+
+pheatmap(cor(datamatrix,use="everything",method=c("pearson")),cluster_rows = F,cluster_cols = F)
+
+###Seeing a negative correlation is surprising, because all of these genes phosphate regulation genes. So all the timepoints should be similar to one aother because all the genes are following a similar time pattern. Also, there is a little bit of a difference between 20 minutes and the other timepoints. We believe that removing the pre or 0 timepoint will show the differences between teh 20 minute time marker and the rest. 
+
+###without pre-timepoint data
+newdata<-data[,-1]##how to remove, when pre is first column
+
+as.matrix(newdata)###make a matrix
+
+###Find correlation
+
+cor(newdata,newdata,use="everything",method=c("pearson"))
+
+newdata.cor<-cor(newdata,newdata,use="everything",method=c("pearson"))
+
+newdata.hc<-hclust(as.dist(1-newdata.cor),method = "complete")
+
+pheatmap(newdata.cor,cluster_rows = F,cluster_cols = F,color=colour,display_numbers = T,number_color = "grey")
+
+
+pheatmap(newdata.cor,cluster_rows = F,cluster_cols = F,color=maincol,display_numbers = T,number_color="grey")
+
+```
+###These correlation plots tell us that if C. glabrata has two wave gene regulation, then it is around 20 minutes. This is because of the distinctive blocks that are made around the 20 minute time point. When making correlation plots with pheatmap, make sure you are watching what the colors actually represent. In the Gurvich et al paper, from which this analysis is inspired by, I think that we need to put C. glabrata through intermediate phosphate conidtions and test for a longer span of time.
+
+####Line plots can be used to explain heatmaps. A line plot can be thought of as a single row of the heatmap.
+```{r}
+install.packages("ggplot2")
+library(ggplot2)
+
+R=c(0,20,20,45,60,90,120,150,180,240)###for time markers on the X axis
+
+
+###a gene that has very low expression in Highphosphate conidtions, and very high expression during phosphate starvation(maybe evidence of 2 wave)
+
+ggplot(data=Cglabrata_Lineplots, aes(x=Time,y=log2(CAGL0K07546g))) + geom_line()
+
+p1a<-ggplot(data=Cglabrata_Lineplots, aes(x=Time,y=log2(CAGL0K07546g))) + geom_line()
+
+p1a+scale_x_continuous(breaks=c(0,20,30,45,60,90,120,150,180,240))
+
+p1c<-p1a+scale_x_continuous(breaks=c(0,20,30,45,60,90,120,150,180,240))
+
+p1d<-p1c+scale_y_continuous(limits = c(1,4))
+
+p1d###consistent y axis and correct time breaks on x axis,this is what the final result should look like for the line plots
+
+  ####non log 2 transformed
+
+p1b<-ggplot(data=Cglabrata_Lineplots, aes(x=Time,y=CAGL0K07546g)) +geom_line()
+
+p1b+scale_x_continuous(breaks=c(0,20,30,45,60,90,120,150,180,240))
+
+###a gene that follows the trend of 1st and 2nd wave
+
+ggplot(data=Cglabrata_Lineplots, aes(x=Time,y=log2(CAGL0K12034g)))+
+  geom_line()
+
+p2a<-ggplot(data=Cglabrata_Lineplots, aes(x=Time,y=log2(CAGL0K12034g)))+
+  geom_line()
+
+p2a+scale_x_continuous(breaks=c(0,20,30,45,60,90,120,150,180,240))
+
+p2c<-p2a+scale_x_continuous(breaks=c(0,20,30,45,60,90,120,150,180,240))
+
+p2c###y axis is not consistent, but x axis is correct
+
+  ###non log2 tranformed
+
+ggplot(data=Cglabrata_Lineplots, aes(x=Time,y=CAGL0K12034g))+
+  geom_line()
+
+p2b<-ggplot(data=Cglabrata_Lineplots, aes(x=Time,y=CAGL0K12034g))+
+  geom_line()
+
+p2b+scale_x_continuous(breaks=c(0,20,30,45,60,90,120,150,180,240))
+
+
+####a gene that has very consistent expression(no wave one and two)
+
+ggplot(data=Cglabrata_Lineplots, aes(x=Time,y=log2(CAGL0L06622g)))+
+  geom_line()
+
+p3a<-ggplot(data=Cglabrata_Lineplots, aes(x=Time,y=log2(CAGL0L06622g)))+
+  geom_line()
+
+p3a+scale_x_continuous(breaks=c(0,20,30,45,60,90,120,150,180,240))
+
+p3c<-p3a+scale_x_continuous(breaks=c(0,20,30,45,60,90,120,150,180,240))
+
+p3d<-p3c<-p3a+scale_x_continuous(breaks=c(0,20,30,45,60,90,120,150,180,240))
+
+p3d+scale_y_continuous(limits = c(1,4))
+
+p3e<-p3d+scale_y_continuous(limits = c(1,4))
+
+p3e###correct y and x axis.
+
+  ### non log 2 transformed
+ggplot(data=Cglabrata_Lineplots, aes(x=Time,y=CAGL0L06622g))+
+  geom_line()
+
+p3b<-ggplot(data=Cglabrata_Lineplots, aes(x=Time,y=CAGL0L06622g))+
+  geom_line()
+
+p3b+scale_x_continuous(breaks=c(0,20,30,45,60,90,120,150,180,240))
+
+  ###Putting them together, I like to use grid.arrange to view multiple plots at once
+install.packages("gridExtra")
+library(gridExtra)
+
+grid.arrange(p1c,p2c,p3c,ncol=1)
+
+grid.arrange(p3e,p1d,ncol=1)
+```
